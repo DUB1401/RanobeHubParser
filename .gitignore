@@ -1,0 +1,14 @@
+# Visual Studio project files.
+*.pyproj
+.vscode
+*.sln
+.vs
+
+# Parced titles data.
+Covers
+Images
+Novels
+Logs
+
+# Python cache.
+__pycache__
