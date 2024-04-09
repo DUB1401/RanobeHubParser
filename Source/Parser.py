@@ -44,7 +44,7 @@ class Parser:
 						FileWriter.write(Response.content)
 
 					# Запись в лог сообщения: иллюстрация загружена.
-					logging.info(f"Novel: \"{self.__Slug}\". Chapter: {ChapterID}. Image downloaded: {ImageIDImageID}.")
+					logging.info(f"Novel: \"{self.__Slug}\". Chapter: {ChapterID}. Image downloaded: {ImageID}.")
 		
 				else:
 					# Запись в лог ошибки: не удалось скачать иллюстрацию.
@@ -63,38 +63,6 @@ class Parser:
 		for Regex in self.__Filters: Data = re.sub(Regex, "", Data)
 
 		return Data
-
-	def __GetChapterName(self, ChapterName: str, Number: int | float | None) -> str | None:
-		# Приведение номера главы к строке.
-		Number = str(Number)
-		
-		# Если номер определён.
-		if Number != "None":
-			# Удаление символов до номера главы.
-			Buffer = ChapterName.split(Number)
-			Buffer.pop(0)
-			Buffer = Number.join(Buffer)
-			Buffer = re.sub("глава|часть|эпизод", "", Buffer, flags = re.IGNORECASE)
-			Buffer = Buffer.lstrip("—.– ,:-")
-			Buffer = Buffer.rstrip(" ")
-			Buffer = RemoveRecurringSubstrings(Buffer, " ")
-			ChapterName = Buffer
-			# Если название главы пустое, обнулить его.
-			if ChapterName == "": ChapterName = None
-
-		# Если включена очистка названия и название имеется.
-		if self.__Settings["prettifier"] and ChapterName != None:
-			# Замена трёх точек символом многоточия.
-			ChapterName.replace("...", "…")
-			# Удаление повторяющихся символов многоточия.
-			ChapterName = RemoveRecurringSubstrings(ChapterName, "…")
-			# Удаление краевых символов.
-			ChapterName = ChapterName.strip(".")
-
-		# Если название имеется и не содержит букв.
-		if ChapterName != None and IsNotAlpha(ChapterName): ChapterName = None
-			
-		return ChapterName
 	
 	def __GetNumberFromString(self, String: str) -> int | float | None:
 		# Поиск первого числа.
@@ -120,7 +88,7 @@ class Parser:
 	
 	def __Merge(self):
 		# Чтение локального файла.
-		Local = ReadJSON(self.__Settings["novels-directory"] + f"/{self.__ID}.json")
+		Local = ReadJSON(self.__Settings["novels-directory"] + f"/{self.__UsedName}.json")
 		# Локальные определения глав.
 		LocalChapters = dict()
 		# Количество дополненных глав.
@@ -265,12 +233,24 @@ class Parser:
 			if Container != None:
 				# Поиск всех вложенных тегов.
 				Paragraphs = Container.find_all("p", recursive = False)
+				# Поиск контейнера сносок.
+				Notes = Container.find_all("li")
+				# Индекс сноски.
+				NoteIndex = 1
 
 				# Для каждого параграфа.
 				for Paragraph in Paragraphs:
 
 					# Если абзац имеет выравнивание по ширине строки, удалить стиль.
 					if Paragraph.has_attr("style") and Paragraph["style"] == "text-align:justify;": del Paragraph["style"]
+
+					# Поиск ссылок в абзаце.
+					Links = Paragraph.find_all("a")
+					
+					# Если ссылки найдены.
+					if Links: 
+						# Удалить каждую ссылку.
+						for Link in Links: Link.decompose()
 
 					# Если в абзаце есть изображение.
 					if "<img" in str(Paragraph):
@@ -292,8 +272,20 @@ class Parser:
 						Buffer.append(str(Paragraph))
 					
 					# Если абзац содержит текст, сохранить его.
-					elif Paragraph.get_text().strip() != "": Buffer.append(str(Paragraph))
+					elif Paragraph.get_text().strip() != "": Buffer.append(self.__FilterStringData(str(Paragraph)))
 						
+				# Если вклюбчен режим улучшения и есть сноски, добавить разделитель.
+				if self.__Settings["prettifier"] and Notes: Buffer.append("<p>____________</p>")
+
+				# Для каждой сноски.
+				for Note in Notes:
+					# Текст заметки.
+					NoteText = self.__FilterStringData(Note.get_text().strip(" ↑\t\n").capitalize())
+					# Дополнение текста главы сноской.
+					Buffer.append(f"<p>{NoteIndex}. {NoteText}</p>")
+					# Инкремент индекса сноски.
+					NoteIndex += 1
+
 				# Если включен форматировщик.
 				if self.__Settings["prettifier"]:
 					# Пока в последнем абзаце отсутсвуют буквенные символы, удалять последний абзац.
@@ -343,13 +335,25 @@ class Parser:
 						# Если тип – глава, получить номер.
 						if Type == "chapter": ChapterNumber = self.__GetNumberFromString(ChapterNameNumberPart[0])
 
+					# Обнуление названия главы.
+					Chapter["name"] = Zerotify(Chapter["name"])
+
+					# Если включено улучшение названия и оное определено.
+					if self.__Settings["prettifier"] and Chapter["name"]:
+						# Замена трёх точек символом многоточия.
+						Chapter["name"].replace("...", "…")
+						# Удаление повторяющихся символов многоточия.
+						Chapter["name"] = RemoveRecurringSubstrings(Chapter["name"], "…")
+						# Удаление краевых символов.
+						Chapter["name"] = Chapter["name"].strip(".")
+
 					# Буфер главы.
 					Buffer = {
 						"id": Chapter["id"],
 						"volume": VolumeNumber,
 						"number": ChapterNumber,
 						"BASE_NUMBER": Chapter["num"],
-						"name": Zerotify(Chapter["name"]),
+						"name": Chapter["name"],
 						"type": Type,
 						"is-paid": False,
 						"translator": None,

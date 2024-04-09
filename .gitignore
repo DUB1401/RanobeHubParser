@@ -10,5 +10,8 @@ Images
 Novels
 Logs
 
+# Collection of filtered slugs of novels.
+Collection.txt
+
 # Python cache.
 __pycache__

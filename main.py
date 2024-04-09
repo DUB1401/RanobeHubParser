@@ -2,6 +2,7 @@ from dublib.Methods import Cls, CheckPythonMinimalVersion, MakeRootDirectories, 
 from dublib.WebRequestor import Protocols, WebConfig, WebLibs, WebRequestor
 from dublib.Terminalyzer import ArgumentsTypes, Command, Terminalyzer
 from Source.Functions import SecondsToTimeString
+from Source.Collector import Collector
 from Source.Parser import Parser
 
 import datetime
@@ -69,6 +70,13 @@ Settings["novels-directory"] = Settings["novels-directory"].rstrip("\\/")
 # Список описаний обрабатываемых команд.
 CommandsList = list()
 
+# Создание команды: collect.
+COM_collect = Command("collect")
+COM_collect.add_flag_position(["f"])
+COM_collect.add_flag_position(["s"])
+COM_collect.add_key_position(["filters"], ArgumentsTypes.All)
+CommandsList.append(COM_collect)
+
 # Создание команды: getcov.
 COM_getcov = Command("getcov")
 COM_getcov.add_argument(ArgumentsTypes.All, important = True)
@@ -89,14 +97,12 @@ CommandsList.append(COM_parse)
 # Создание команды: repair.
 COM_repair = Command("repair")
 COM_repair.add_argument(ArgumentsTypes.All, important = True)
-COM_repair.add_key_position(["chapter"], ArgumentsTypes.Number, important = True)
 COM_repair.add_flag_position(["s"])
+COM_repair.add_key_position(["chapter"], ArgumentsTypes.Number, important = True)
 CommandsList.append(COM_repair)
 
 # Создание команды: update.
 COM_update = Command("update")
-COM_update.add_flag_position(["onlydesc"])
-COM_update.add_flag_position(["h", "y"])
 COM_update.add_flag_position(["f"])
 COM_update.add_flag_position(["s"])
 COM_update.add_key_position(["from"], ArgumentsTypes.All)
@@ -172,6 +178,17 @@ if Settings["proxy"]["enable"] == True: Requestor.add_proxy(
 #==========================================================================================#
 # >>>>> ОБРАБОТКА КОММАНД <<<<< #
 #==========================================================================================#
+
+# Обработка команды: collect.
+if "collect" == CommandDataStruct.name:
+	# Запись в лог сообщения: сбор списка новелл.
+	logging.info("====== Collecting ======")
+	# Инициализация сборщика.
+	CollectorObject = Collector(Settings, Requestor)
+	# Фильтры.
+	Filters = CommandDataStruct.values["filters"] if "filters" in CommandDataStruct.keys else None
+	# Сбор списка алиасов новелл, подходящих под фильтр.
+	CollectorObject.collect(Filters, IsForceModeActivated)
 
 # Обработка команды: getcov.
 if "getcov" == CommandDataStruct.name:
