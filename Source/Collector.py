@@ -1,5 +1,6 @@
 from dublib.WebRequestor import WebRequestor
 from dublib.Methods import Cls
+from datetime import datetime
 from time import sleep
 
 import logging
@@ -92,3 +93,59 @@ class Collector:
 		logging.info("Total slugs count in collection: " + str(len(Collection)) + ".")
 		# Сохранение коллекции.
 		self.__SaveCollection(Collection)
+
+	def get_updates(self, hours: int | str) -> list[str]:
+		# Приведение количества часов к целочисленному типу.
+		hours = int(hours)
+		# Текущее время.
+		CurrentDate = datetime.now().timestamp()
+		# Коллекция алиасов.
+		Collection = list()
+		# Состояние: завершён ли сбор.
+		IsCollected = False
+		# Текущая страница.
+		CurrentPage = 1
+
+		# Пока не достигнут предел запрашиваемого диапазона дат.
+		while not IsCollected:
+			# Очистка консоли.
+			Cls()
+			# Вывод в консоль: прогресс.
+			print(f"Collecting: {CurrentPage}")
+			# Запись в лог сообщения: страница просканирована.
+			logging.info(f"Page {CurrentPage} collected.")
+			# Выполнение запроса.
+			Response = self.__Requestor.get(f"https://ranobehub.org/api/feed?page={CurrentPage}&take=1")
+
+			# Если запрос успешен.
+			if Response.status_code == 200:
+				# Преобразование в JSON.
+				Data = json.loads(Response.text)
+
+				# Для каждой новеллы.
+				for Item in Data["resource"][0]["items"]:
+
+					# Если дата обновления подпадает под диапазон.
+					if Item["updates"][0]["created_at"] >= CurrentDate - hours * 3600:
+						# Получение алиаса.
+						Slug = Item["ranobe"]["url"].split("/")[-1]
+						# Запись алиаса.
+						Collection.append(Slug)
+
+					else:
+						# Переключение статуса сборки.
+						IsCollected = True
+
+			else:
+				# Запись в лог ошибки: не удалось получить страницу каталога.
+				logging.error("Unable to load updates.")
+
+			# Инкремент текущей страницы.
+			CurrentPage += 1
+			# Выжидание интервала.
+			sleep(self.__Settings["delay"])
+
+		# Запись в лог сообщения: количество элементов в коллекции.
+		logging.info("Total novels will be updated: " + str(len(Collection)) + ".")
+		
+		return Collection

@@ -105,6 +105,7 @@ CommandsList.append(COM_repair)
 COM_update = Command("update")
 COM_update.add_flag_position(["f"])
 COM_update.add_flag_position(["s"])
+COM_update.add_key_position(["hours"], ArgumentsTypes.Number)
 COM_update.add_key_position(["from"], ArgumentsTypes.All)
 CommandsList.append(COM_update)
 
@@ -201,17 +202,33 @@ if "getcov" == CommandDataStruct.name:
 	# Сохранение обложки новеллы.
 	LocalNovel.download_covers()
 
-# Обработка команды: parse.
-if "parse" == CommandDataStruct.name:
-	# Запись в лог сообщения: заголовок парсинга.
-	logging.info("====== Parsing ======")
+# Обработка команд: parse и update.
+if CommandDataStruct.name in ["parse", "update"]:
 	# Список новелл для парсинга.
 	NovelsList = list()
 	# Индекс стартового алиаса.
 	StartSlugIndex = 0
+	# Состояние: выполняется ли обновление.
+	IsUpdating = False
+
+	# Если выполняется обновление.
+	if CommandDataStruct.name == "update":
+		# Запись в лог сообщения: получение списка обновлений.
+		logging.info("====== Updating ======")
+		# Инициализация сборщика.
+		CollectorObject = Collector(Settings, Requestor)
+		# Диапазон обновлений.
+		Hours = CommandDataStruct["hours"] if "hours" in CommandDataStruct.keys else 24
+		# Получение списка обновлённых новелл.
+		NovelsList = CollectorObject.get_updates(Hours)
+		# Переключение состояния обновления.
+		IsUpdating = True
+
+	# Запись в лог сообщения: заголовок парсинга.
+	logging.info("====== Parsing ======")
 	
 	# Если активирован флаг парсинга коллекций.
-	if "collection" in CommandDataStruct.flags:
+	if not IsUpdating and "collection" in CommandDataStruct.flags:
 		
 		# Если существует файл коллекции.
 		if os.path.exists("Collection.txt"):
@@ -236,7 +253,7 @@ if "parse" == CommandDataStruct.name:
 			raise FileNotFoundError("Collection.txt")
 		
 	# Если активирован флаг обновления локальных файлов.
-	elif "local" in CommandDataStruct.flags:
+	elif not IsUpdating and "local" in CommandDataStruct.flags:
 		# Вывод в консоль: идёт поиск новелл.
 		print("Scanning novels...")
 		# Получение списка файлов в директории.
@@ -254,7 +271,8 @@ if "parse" == CommandDataStruct.name:
 		# Запись в лог сообщения: количество доступных для парсинга тайтлов.
 		logging.info("Local titles to parsing: " + str(len(NovelsList)) + ".")
 
-	else:
+	# Если не идёт получение обновлений.
+	elif not IsUpdating:
 		# Добавление аргумента в очередь парсинга.
 		NovelsList.append(CommandDataStruct.arguments[0])
 
@@ -270,7 +288,7 @@ if "parse" == CommandDataStruct.name:
 			
 		else:
 			# Запись в лог предупреждения: стартовый алиас не найден.
-			logging.warning("Unable to find start slug in \"Collection.txt\". All titles skipped.")
+			logging.warning("Unable to find start slug in collection. All titles skipped.")
 			# Задать стартовый индекс, равный количеству алиасов.
 			StartSlugIndex = len(NovelsList)
 			
