@@ -26,14 +26,3 @@ def SecondsToTimeString(Seconds: float) -> str:
 		TimeString += str(Seconds) + " seconds"
 
 	return TimeString
-
-def Zerotify(value: any) -> any:
-	"""
-	Преобразует значения, логически интерпретируемые в False, в тип None.
-		value – обрабатываемое значение.
-	"""
-
-	# Если значение логически интерпретируется в False, обнулить его.
-	if bool(value) == False: value = None
-
-	return value

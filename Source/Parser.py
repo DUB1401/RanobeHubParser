@@ -1,14 +1,12 @@
 from dublib.Methods import CheckForCyrillicPresence, Cls, ReadJSON, RemoveRecurringSubstrings, WriteJSON
+from dublib.Methods import IsNotAlpha, Zerotify
 from dublib.WebRequestor import WebRequestor
-from dublib.Methods import IsNotAlpha
-from Source.Functions import Zerotify
 from dublib.Polyglot import HTML
 from bs4 import BeautifulSoup
 from time import sleep
 
 import requests
 import logging
-import json
 import os
 import re
 
@@ -131,6 +129,10 @@ class Parser:
 
 		return RegexList
 
+	def __RemoveBaseNumbers(self):
+		# Для каждой главы удалить порядковый номер.
+		for ChapterIndex in range(len(self.__Novel["chapters"][str(self.__ID)])): del self.__Novel["chapters"][str(self.__ID)][ChapterIndex]["BASE_NUMBER"]
+
 	#==========================================================================================#
 	# >>>>> МЕТОДЫ ПАРСИНГА <<<<< #
 	#==========================================================================================#
@@ -162,9 +164,9 @@ class Parser:
 				self.__Novel["chapters"][str(self.__ID)][ChapterIndex]["paragraphs"] = self.__GetChapterParagraphs(ChapterID, Volume, BaseNumber)
 				# Выжидание интервала.
 				sleep(self.__Settings["delay"])
-				
-		# Для каждой главы удалить порядковый номер.
-		for ChapterIndex in range(len(self.__Novel["chapters"][str(self.__ID)])): del self.__Novel["chapters"][str(self.__ID)][ChapterIndex]["BASE_NUMBER"]
+
+		# Удаление порядкового номера глав.
+		self.__RemoveBaseNumbers()
 
 		# Запись в лог сообщения: количество дополненных глав.
 		logging.info(f"Novel: \"{self.__Slug}\". Chapters amended: {AmendedChaptersCount}.")
@@ -190,8 +192,8 @@ class Parser:
 		# Автор.
 		Author = None
 		# Если удалось найти контейнер автора, получить ник.
-		if AuthorContainer: Author = AuthorContainer.get_text().replace("(Автор)", "").strip()
-	
+		if AuthorContainer: Author = AuthorContainer.get_text().replace("(Автор)", "").strip().split("\n")[0]
+		
 		return Author	
 	
 	def __GetCovers(self, Soup: BeautifulSoup) -> list:
@@ -223,7 +225,7 @@ class Parser:
 		Buffer = list()
 
 		# Если запрос успешен.
-		if Response.status_code == 200:
+		if Response.status_code == 200 and "Слишком много запросов" not in str(Response.text):
 			# Парсинг страницы главы.
 			Soup = BeautifulSoup(Response.text, "html.parser")
 			# Поиск контейнера главы.
@@ -232,47 +234,72 @@ class Parser:
 			# Если есть перевод.
 			if Container != None:
 				# Поиск всех вложенных тегов.
-				Paragraphs = Container.find_all("p", recursive = False)
+				Paragraphs = Container.find_all(["p", "blockquote"], recursive = False)
 				# Поиск контейнера сносок.
 				Notes = Container.find_all("li")
-				# Индекс сноски.
+				# Индекс сноски внизу главы.
 				NoteIndex = 1
+				# Индекс сноски в тексте главы.
+				MarkIndex = 1
 
 				# Для каждого параграфа.
 				for Paragraph in Paragraphs:
-
 					# Если абзац имеет выравнивание по ширине строки, удалить стиль.
 					if Paragraph.has_attr("style") and Paragraph["style"] == "text-align:justify;": del Paragraph["style"]
-
 					# Поиск ссылок в абзаце.
 					Links = Paragraph.find_all("a")
 					
 					# Если ссылки найдены.
 					if Links: 
-						# Удалить каждую ссылку.
-						for Link in Links: Link.decompose()
+
+						# Для каждой ссылки.
+						for Link in Links:
+
+							# Если ссылка является сноской.
+							if Link.get_text().strip() == "*":
+								# Удаление сноски.
+								Link.replace_with(f" [{MarkIndex}]")
+								# Инкремент индекса сноски.
+								MarkIndex += 1
 
 					# Если в абзаце есть изображение.
-					if "<img" in str(Paragraph):
+					if Paragraph.find("img"):
 						# Поиск всех изображений в абзаце.
 						Images = Paragraph.find_all("img")
 
 						# Для каждого изображения.
 						for Image in Images:
-							# ID иллюстрации.
-							ImageID = Image["data-media-id"]
-							# Удаление идентифицирующего атрибута.
-							del Image["data-media-id"]
-							# Перезапись URI иллюстрации.
-							Image["src"] = self.__Settings["mount-images"].rstrip("/\\") + f"/{self.__ID}/{ChapterID}/{ImageID}.webp"
-							# Скачивание иллюстрации.
-							self.__DownloadImage(f"https://ranobehub.org/api/media/{ImageID}", ChapterID, ImageID)
+
+							# Если иллюстрация имеет ID.
+							if Image.has_attr("data-media-id"):
+								# ID иллюстрации.
+								ImageID = Image["data-media-id"]
+								# Удаление идентифицирующего атрибута.
+								del Image["data-media-id"]
+								# Перезапись URI иллюстрации.
+								Image["src"] = self.__Settings["mount-images"].rstrip("/\\") + f"/{self.__ID}/{ChapterID}/{ImageID}.webp"
+								# Скачивание иллюстрации.
+								self.__DownloadImage(f"https://ranobehub.org/api/media/{ImageID}", ChapterID, ImageID)
 
 						# Запись абзаца.
 						Buffer.append(str(Paragraph))
+
+					# Если в абзаце есть окно.
+					elif "<blockquote" in str(Paragraph):
+						# Запись абзаца.
+						Buffer.append("<p>" + str(Paragraph) + "</p>")
 					
-					# Если абзац содержит текст, сохранить его.
-					elif Paragraph.get_text().strip() != "": Buffer.append(self.__FilterStringData(str(Paragraph)))
+					# Если абзац содержит текст.
+					elif Paragraph.get_text().strip() != "":
+						# Текст абзаца.
+						Line = self.__FilterStringData(str(Paragraph))
+						# Парсинг тегов.
+						Line = HTML(Line)
+						Line.replace_tag("em", "i")
+						Line.replace_tag("strong", "b")
+						Line.remove_tags(["br"])
+						# Сохранение текста.
+						Buffer.append(Line.text)
 						
 				# Если вклюбчен режим улучшения и есть сноски, добавить разделитель.
 				if self.__Settings["prettifier"] and Notes: Buffer.append("<p>____________</p>")
@@ -295,11 +322,11 @@ class Parser:
 
 			else:
 				# Запись в лог предупреждения: глава не содержит перевод.
-				logging.warning(f"Novel: \"{self.__Slug}\". Chapter: {ID}. No translation.")
+				logging.warning(f"Novel: \"{self.__Slug}\". Chapter: {ChapterID}. No translation.")
 
 		else:
 			# Запись в лог ошибки: не удалось получить содержимое главы.
-			logging.error(f"Novel: \"{self.__Slug}\". Chapter: {ID}. Unable to load content.")
+			logging.error(f"Novel: \"{self.__Slug}\". Chapter: {ChapterID}. Unable to load content.")
 
 		return Buffer
 
@@ -311,8 +338,8 @@ class Parser:
 
 		# Если запрос успешен.
 		if Response.status_code == 200:
-			# Парсинг томов в JSON.
-			Volumes = json.loads(Response.text)["volumes"]
+			# Получение томов.
+			Volumes = Response.json["volumes"]
 
 			# Для каждого тома.
 			for Volume in Volumes:
@@ -322,18 +349,22 @@ class Parser:
 				# Для каждой главы в томе.
 				for Chapter in Volume["chapters"]:
 					# Часть с номером главы.
-					ChapterNameNumberPart = re.search("глава( )?\d+(\.\d+)?( )?(. )?", Chapter["name"], re.IGNORECASE)
+					ChapterNameNumberPart = re.search("( )?\d+(\.\d+)?( )?(. )?", Chapter["name"], re.IGNORECASE)
 					# Номер главы.
 					ChapterNumber = None
 					# Тип главы.
 					Type = self.__DetermineChapterType(Chapter["name"])
-
+					
 					# Если найден номер главы.
 					if ChapterNameNumberPart:
 						# Удаление номера из названия.
 						Chapter["name"] = Chapter["name"].split(ChapterNameNumberPart[0])[-1]
 						# Если тип – глава, получить номер.
 						if Type == "chapter": ChapterNumber = self.__GetNumberFromString(ChapterNameNumberPart[0])
+
+					else:
+						# Если тип – глава, получить номер.
+						if Type == "chapter": ChapterNumber = self.__GetNumberFromString(Chapter["name"])
 
 					# Обнуление названия главы.
 					Chapter["name"] = Zerotify(Chapter["name"])
@@ -418,7 +449,7 @@ class Parser:
 	def __GetOriginalLanguage(self, Soup: BeautifulSoup) -> str | None:
 		# Определения кодов языков по стандарту ISO 639-1.
 		LanguagesDeterminations = {
-			"Китая": "ZH",
+			"Китай": "ZH",
 			"Корея": "KO",
 			"Япония": "JA",
 			"США": "EN"
@@ -475,11 +506,13 @@ class Parser:
 		return IsSuccess
 	
 	def __GetNames(self, Soup: BeautifulSoup) -> dict:
+		# Поиск заголовка альтернативного названия.
+		AlternativeName = Soup.find("h3")
 		# Словарь названий.
 		Names = {
 			"ru": Soup.find("h1").get_text().strip(),
 			"en": Soup.find("h2").get_text().strip(),
-			"another": [Soup.find("h3").get_text().strip()]
+			"another": AlternativeName.get_text().strip() if AlternativeName else []
 		}
 
 		return Names
@@ -497,8 +530,12 @@ class Parser:
 			
 			# Если блок содержит нужные данные.
 			if "Год выпуска" in str(Block):
-				# Получение данных.
-				Year = int(Block.get_text().replace("Год выпуска", "").strip())
+				
+				try:
+					# Получение данных.
+					Year = int(Block.get_text().replace("Год выпуска", "").strip())
+				
+				except ValueError: pass
 			
 		return Year
 	
@@ -536,9 +573,11 @@ class Parser:
 		# Список тегов.
 		Tags = list()
 		# Поиск контейнера с данными.
-		DataContainer = Soup.find_all("div", {"class": "book-tags"})[-1].find("div", {"class": "__spoiler_new display-none"})
-		# Поиск всех ссылок на теги.
-		DataBlocks = DataContainer.find_all("a")
+		DataContainer = Soup.find_all("div", {"class": "book-tags"})[-1]
+		# Поиск спойлера.
+		DataSpoiler = DataContainer.find("div", {"class": "__spoiler_new display-none"})
+		# Поиск всех ссылок на теги в контейнере или спойлере.
+		DataBlocks = DataSpoiler.find_all("a") if DataSpoiler else DataContainer.find_all("a")
 
 		# Для каждой ссылки..
 		for Block in DataBlocks: 
@@ -551,26 +590,26 @@ class Parser:
 	# >>>>> ПУБЛИЧНЫЕ МЕТОДЫ <<<<< #
 	#==========================================================================================#
 
-	def __init__(self, Settings: dict, Requestor: WebRequestor, Slug: int | str, ForceMode: bool = True, Amend: bool = True, Message: str = ""):
+	def __init__(self, settings: dict, requestor: WebRequestor, slug: int | str, force_mode: bool = True, amend: bool = True, message: str = ""):
 		
 		#---> Генерация динамических свойств.
 		#==========================================================================================#
 		# Список фильтров на основе регулярных выражений.
 		self.__Filters = self.__ReadFilters()
 		# Глоабльные настройки.
-		self.__Settings = Settings
+		self.__Settings = settings
 		# Менеджер запросов.
-		self.__Requestor = Requestor
+		self.__Requestor = requestor
 		# Алиас новеллы.
-		self.__Slug = Slug
+		self.__Slug = slug
 		# ID новеллы.
 		self.__ID = int(self.__Slug.split("-")[0])
 		# Используемое имя тайтла.
-		self.__UsedName = str(self.__ID) if Settings["use-id-instead-slug"] else Slug
+		self.__UsedName = str(self.__ID) if settings["use-id-instead-slug"] else slug
 		# Состояние: включён ли режим перезаписи.
-		self.__ForceMode = ForceMode
+		self.__ForceMode = force_mode
 		# Сообщение из внешних обработчиков.
-		self.__Message = Message + "Current novel: " + str(self.__ID) + "\n"
+		self.__Message = message + "Current novel: " + str(self.__Slug) + "\n"
 		# Структура новеллы.
 		self.__Novel = {
 			"format": "dnp-v1",
@@ -619,24 +658,24 @@ class Parser:
 		self.__IsAccesed = self.__GetNovel()
 		
 		# Если удалось спарсить страницу новеллы и указано дополнить главы.
-		if self.__IsAccesed and Amend:
+		if self.__IsAccesed:
 			
 			# Если уже существует описательный файл и режим перезаписи отключен.
-			if os.path.exists(self.__Settings["novels-directory"] + f"/{self.__UsedName}.json") and not ForceMode:
+			if os.path.exists(self.__Settings["novels-directory"] + f"/{self.__UsedName}.json") and not force_mode:
 				# Запись в лог сообщения: информация будет перезаписана.
 				logging.info(f"Novel: \"{self.__Slug}\". Local JSON already exists. Merging...")
 				# Слияние источников.
 				self.__Merge()
 				
 			# Если уже существует описательный файл и режим перезаписи включен.
-			elif os.path.exists(self.__Settings["novels-directory"] + f"/{self.__UsedName}.json") and ForceMode:
+			elif os.path.exists(self.__Settings["novels-directory"] + f"/{self.__UsedName}.json") and force_mode:
 				# Запись в лог сообщения: информация будет перезаписана.
 				logging.info(f"Novel: \"{self.__Slug}\". Local JSON already exists. Will be overwritten...")
 
 			# Дополнение глав.
-			self.__Amend()
+			if amend: self.__Amend()
 		
-		elif Amend:
+		else:
 			# Запись в лог предупреждения: новелла недоступна.
 			logging.warning(f"Novel: \"{self.__Slug}\". Not accesed. Skipped.")
 
@@ -693,12 +732,12 @@ class Parser:
 		# Запись в лог сообщения: старт парсинга.
 		logging.info(f"Novel: \"{self.__Slug}\". Covers downloaded: {DownloadedCoversCount}.")
 
-	def repair_chapter(self, ChapterID: int | str):
+	def repair_chapter(self, chapter_id: int | str):
 
 		# Если новелла доступна.
 		if self.__IsAccesed:
 			# Приведение ID главы к целочисленному.
-			ChapterID = int(ChapterID)
+			chapter_id = int(chapter_id)
 			# Состояние: восстановлена ли глава.
 			IsRepaired = False		
 
@@ -709,7 +748,7 @@ class Parser:
 				for ChapterIndex in range(0, len(self.__Novel["chapters"][BranchID])):
 					
 					# Если ID совпадает с искомым.
-					if self.__Novel["chapters"][BranchID][ChapterIndex]["id"] == ChapterID:
+					if self.__Novel["chapters"][BranchID][ChapterIndex]["id"] == chapter_id:
 						# Переключение состояния.
 						IsRepaired = True
 						# Получение списка абзацев главы.
@@ -718,20 +757,24 @@ class Parser:
 							self.__Novel["chapters"][BranchID][ChapterIndex]["volume"],
 							self.__Novel["chapters"][BranchID][ChapterIndex]["BASE_NUMBER"],
 						)
+						# Удаление порядкового номера глав.
+						self.__RemoveBaseNumbers()
 						# Запись в лог сообщения: глава дополнена.
-						logging.info(f"Novel: \"{self.__Slug}\". Chapter {ChapterID} repaired.")
+						logging.info(f"Novel: \"{self.__Slug}\". Chapter {chapter_id} repaired.")
 						# Запись информации о параграфах.
 						self.__Novel["chapters"][BranchID][ChapterIndex]["paragraphs"] = Paragraphs
 						
 			# Если глава восстановлена.
 			if IsRepaired == False:
 				# Запись в лог критической ошибки: глава не найдена.
-				logging.critical("Title: \"" + self.__Slug + f"\". Chapter {ChapterID} not found.")
+				logging.critical("Title: \"" + self.__Slug + f"\". Chapter {chapter_id} not found.")
 				# Выброс исключения.
-				raise Exception(f"Chapter with ID {ChapterID} not found.")
+				raise Exception(f"Chapter with ID {chapter_id} not found.")
 
-	def save(self):
+	def save(self, filename: str | None = None):
+		# Если не указано имя файла, использовать стандартное.
+		if not filename: filename = self.__UsedName
 		# Если каталог для новелл не существует, создать.
 		if os.path.exists(self.__Settings["novels-directory"]) == False: os.makedirs(self.__Settings["novels-directory"])
 		# Запись файла.
-		WriteJSON(self.__Settings["novels-directory"] + f"/{self.__UsedName}.json", self.__Novel)
+		WriteJSON(self.__Settings["novels-directory"] + f"/{filename}.json", self.__Novel)

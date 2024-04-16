@@ -4,7 +4,6 @@ from datetime import datetime
 from time import sleep
 
 import logging
-import json
 
 class Collector:
 
@@ -34,14 +33,14 @@ class Collector:
 			# Запись каждого алиаса в файл.
 			for Slug in Collection: FileWriter.write(Slug + "\n")
     
-	def __init__(self,  Settings: dict, Requestor: WebRequestor):
+	def __init__(self,  settings: dict, requestor: WebRequestor):
 
 		#---> Генерация динамичкских свойств.
 		#==========================================================================================#
 		# Глобальные настройки.
-		self.__Settings = Settings.copy()
+		self.__Settings = settings.copy()
 		# Обработчик навигации.
-		self.__Requestor = Requestor
+		self.__Requestor = requestor
 		
 	def collect(self, filters: str | None = None, force_mode: bool = False) -> list:
 		# Формирование фильтров.
@@ -68,13 +67,11 @@ class Collector:
 
 			# Если запрос успешен.
 			if Response.status_code == 200:
-				# Преобразование в JSON.
-				Data = json.loads(Response.text)
 				# Обновление записи о последней странице.
-				LastPage = Data["pagination"]["lastPage"]
+				LastPage = Response.json["pagination"]["lastPage"]
 
 				# Для каждой новеллы.
-				for Item in Data["resource"]:
+				for Item in Response.json["resource"]:
 					# Получение алиаса.
 					Slug = Item["url"].split("/")[-1]
 					# Запись алиаса.
@@ -119,11 +116,9 @@ class Collector:
 
 			# Если запрос успешен.
 			if Response.status_code == 200:
-				# Преобразование в JSON.
-				Data = json.loads(Response.text)
 
 				# Для каждой новеллы.
-				for Item in Data["resource"][0]["items"]:
+				for Item in Response.json["resource"][0]["items"]:
 
 					# Если дата обновления подпадает под диапазон.
 					if Item["updates"][0]["created_at"] >= CurrentDate - hours * 3600:

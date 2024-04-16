@@ -198,7 +198,7 @@ if "getcov" == CommandDataStruct.name:
 	# Генерация сообщения.
 	ExternalMessage = InFuncMessage_Shutdown + InFuncMessage_ForceMode
 	# Парсинг новеллы (без глав).
-	LocalNovel = Parser(Settings, Requestor, CommandDataStruct.arguments[0], ForceMode = IsForceModeActivated, Amend = False, Message = ExternalMessage)
+	LocalNovel = Parser(Settings, Requestor, CommandDataStruct.arguments[0], force_mode = IsForceModeActivated, amend = False, message = ExternalMessage)
 	# Сохранение обложки новеллы.
 	LocalNovel.download_covers()
 
@@ -218,7 +218,7 @@ if CommandDataStruct.name in ["parse", "update"]:
 		# Инициализация сборщика.
 		CollectorObject = Collector(Settings, Requestor)
 		# Диапазон обновлений.
-		Hours = CommandDataStruct["hours"] if "hours" in CommandDataStruct.keys else 24
+		Hours = CommandDataStruct.values["hours"] if "hours" in CommandDataStruct.keys else 24
 		# Получение списка обновлённых новелл.
 		NovelsList = CollectorObject.get_updates(Hours)
 		# Переключение состояния обновления.
@@ -264,7 +264,7 @@ if CommandDataStruct.name in ["parse", "update"]:
 		# Чтение всех алиасов из локальных файлов.
 		for File in NovelsSlugs:
 			# JSON файл новеллы.
-			LocalNovel = ReadJSON(Settings["novels-directory"] + File)
+			LocalNovel = ReadJSON(Settings["novels-directory"] + f"/{File}")
 			# Помещение алиаса в список.
 			NovelsList.append(str(LocalNovel["slug"]) if "slug" in LocalNovel.keys() else str(LocalNovel["dir"]))
 
@@ -299,9 +299,9 @@ if CommandDataStruct.name in ["parse", "update"]:
 		# Генерация сообщения.
 		ExternalMessage = InFuncMessage_Shutdown + InFuncMessage_ForceMode + InFuncMessage_Progress if len(NovelsList) > 1 else InFuncMessage_Shutdown + InFuncMessage_ForceMode
 		# Парсинг тайтла.
-		LocalNovel = Parser(Settings, Requestor, NovelsList[Index], ForceMode = IsForceModeActivated, Message = ExternalMessage)
+		LocalNovel = Parser(Settings, Requestor, NovelsList[Index], force_mode = IsForceModeActivated, message = ExternalMessage)
 		# Загрузка обложек тайтла.
-		LocalNovel.download_covers()
+		LocalNovel.download_covers() 
 		# Сохранение локальных файлов тайтла.
 		LocalNovel.save()
 		# Выжидание интервала.
@@ -322,11 +322,11 @@ if "repair" == CommandDataStruct.name:
 	# Алиас новеллы.
 	NovelSlug = TitleContent["slug"]
 	# Парсинг тайтла.
-	LocalNovel = Parser(Settings, Requestor, NovelSlug, ForceMode = False, Amend = False, Message = ExternalMessage)
+	LocalNovel = Parser(Settings, Requestor, NovelSlug, force_mode = False, amend = False, message = ExternalMessage)
 	# Восстановление главы.
 	LocalNovel.repair_chapter(CommandDataStruct.values["chapter"])
 	# Сохранение локальных файлов новеллы.
-	LocalNovel.save()
+	LocalNovel.save(Filename.replace(".json", ""))
 
 #==========================================================================================#
 # >>>>> ЗАВЕРШЕНИЕ РАБОТЫ СКРИПТА <<<<< #
