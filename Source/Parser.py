@@ -156,12 +156,14 @@ class Parser:
 				Volume = self.__Novel["chapters"][str(self.__ID)][ChapterIndex]["volume"]
 				# Номер главы.
 				BaseNumber = self.__Novel["chapters"][str(self.__ID)][ChapterIndex]["BASE_NUMBER"]
-				# Запись в лог сообщения: глава дополнена контентом.
-				logging.info(f"Novel: \"{self.__Slug}\". Chapter: {ChapterID}. Amended.")
 				# Инкремент количества дополненных глав.
 				AmendedChaptersCount += 1
+				# Список абзацев.
+				ParagraphsList = self.__GetChapterParagraphs(ChapterID, Volume, BaseNumber)
 				# Сохранение контента.
-				self.__Novel["chapters"][str(self.__ID)][ChapterIndex]["paragraphs"] = self.__GetChapterParagraphs(ChapterID, Volume, BaseNumber)
+				self.__Novel["chapters"][str(self.__ID)][ChapterIndex]["paragraphs"] = ParagraphsList
+				# Запись в лог сообщения: глава дополнена контентом.
+				if len(ParagraphsList) > 0: logging.info(f"Novel: \"{self.__Slug}\". Chapter: {ChapterID}. Amended.")
 				# Выжидание интервала.
 				sleep(self.__Settings["delay"])
 
