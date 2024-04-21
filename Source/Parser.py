@@ -215,8 +215,8 @@ class Parser:
 				"width": None,
 				"height": None
 			}
-			# Добавление обложки в список.
-			Covers.append(Buffer)
+			# Если обложка не является заглушкой, добавить обложку в список.
+			if Buffer["filename"] != "default.jpg": Covers.append(Buffer)
 			
 		return Covers
 	
