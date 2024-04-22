@@ -216,7 +216,7 @@ class Parser:
 				"height": None
 			}
 			# Если обложка не является заглушкой, добавить обложку в список.
-			if Buffer["filename"] != "default.jpg": Covers.append(Buffer)
+			if Buffer["filename"] != "default.jpg.webp": Covers.append(Buffer)
 			
 		return Covers
 	
