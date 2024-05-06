@@ -350,6 +350,8 @@ class Parser:
 
 				# Для каждой главы в томе.
 				for Chapter in Volume["chapters"]:
+					# Удаление номера тома.
+					Chapter["name"] = re.sub("том \d+(.\d+)?", "", Chapter["name"], flags = re.IGNORECASE).lstrip(". ")
 					# Часть с номером главы.
 					ChapterNameNumberPart = re.search("( )?\d+(\.\d+)?( )?(. )?", Chapter["name"], re.IGNORECASE)
 					# Номер главы.
