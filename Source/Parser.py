@@ -229,7 +229,7 @@ class Parser:
 		# Если запрос успешен.
 		if Response.status_code == 200 and "Слишком много запросов" not in str(Response.text):
 			# Парсинг страницы главы.
-			Soup = BeautifulSoup(Response.text, "html.parser")
+			Soup = BeautifulSoup(Response.text, "lxml")
 			# Поиск контейнера главы.
 			Container = Soup.find("div", {"data-container": str(ChapterID)})
 			
@@ -380,7 +380,7 @@ class Parser:
 						# Удаление повторяющихся символов многоточия.
 						Chapter["name"] = RemoveRecurringSubstrings(Chapter["name"], "…")
 						# Удаление краевых символов.
-						Chapter["name"] = Chapter["name"].strip(".")
+						Chapter["name"] = Chapter["name"].strip(".").strip()
 
 					# Буфер главы.
 					Buffer = {
@@ -480,32 +480,40 @@ class Parser:
 
 		return Language
 
-	def __GetNovel(self) -> bool:
+	def __GetNovel(self) -> bool | int:
 		# Состояние: успешен ли запрос.
 		IsSuccess = False
 		# Выполнение запроса.
 		Response = self.__Requestor.get(f"https://ranobehub.org/ranobe/{self.__Slug}")
+		
 		# Если запрос успешен.
 		if Response.status_code == 200:
 			# Парсинг кода страницы.
 			Soup = BeautifulSoup(Response.text, "html.parser")
-			# Парсинг названий.
-			Names = self.__GetNames(Soup)
-			# Заполнение данных новеллы.
-			self.__Novel["covers"] = self.__GetCovers(Soup)
-			self.__Novel["ru-name"] = Names["ru"]
-			self.__Novel["en-name"] = Names["en"]
-			self.__Novel["another-names"] = Names["another"]
-			self.__Novel["author"] = self.__GetAuthor(Soup)
-			self.__Novel["publication-year"] = self.__GetPublicationYear(Soup)
-			self.__Novel["description"] = self.__GetDescription(Soup)
-			self.__Novel["original-language"] = self.__GetOriginalLanguage(Soup)
-			self.__Novel["status"] = self.__GetStatus(Soup)
-			self.__Novel["genres"] = self.__GetGenres(Soup)
-			self.__Novel["tags"] = self.__GetTags(Soup)
-			self.__Novel["chapters"][str(self.__ID)] = self.__GetChapters()
-			# Переключение состояния.
-			IsSuccess = True
+
+			# Если нет сообщения о блокировке ресурса.
+			if not Soup.find("div", {"class": "ui negative message"}):
+				# Парсинг названий.
+				Names = self.__GetNames(Soup)
+				# Заполнение данных новеллы.
+				self.__Novel["covers"] = self.__GetCovers(Soup)
+				self.__Novel["ru-name"] = Names["ru"]
+				self.__Novel["en-name"] = Names["en"]
+				self.__Novel["another-names"] = Names["another"]
+				self.__Novel["author"] = self.__GetAuthor(Soup)
+				self.__Novel["publication-year"] = self.__GetPublicationYear(Soup)
+				self.__Novel["description"] = self.__GetDescription(Soup)
+				self.__Novel["original-language"] = self.__GetOriginalLanguage(Soup)
+				self.__Novel["status"] = self.__GetStatus(Soup)
+				self.__Novel["genres"] = self.__GetGenres(Soup)
+				self.__Novel["tags"] = self.__GetTags(Soup)
+				self.__Novel["chapters"][str(self.__ID)] = self.__GetChapters()
+				# Переключение состояния.
+				IsSuccess = True
+
+			else:
+				# Переключение состояния.
+				IsSuccess = -1
 			
 		return IsSuccess
 	
@@ -662,7 +670,7 @@ class Parser:
 		self.__IsAccesed = self.__GetNovel()
 		
 		# Если удалось спарсить страницу новеллы и указано дополнить главы.
-		if self.__IsAccesed:
+		if self.__IsAccesed == True:
 			
 			# Если уже существует описательный файл и режим перезаписи отключен.
 			if os.path.exists(self.__Settings["novels-directory"] + f"/{self.__UsedName}.json") and not force_mode:
@@ -678,63 +686,75 @@ class Parser:
 
 			# Дополнение глав.
 			if amend: self.__Amend()
+
+		elif self.__IsAccesed == -1:
+			# Запись в лог предупреждения: новелла недоступна на территории текущей страны.
+			logging.warning(f"Novel: \"{self.__Slug}\". Not accesed on the territory of current country. Skipped.")
+			# Преобразование состояния.
+			self.__IsAccesed = 0
 		
 		else:
 			# Запись в лог предупреждения: новелла недоступна.
 			logging.warning(f"Novel: \"{self.__Slug}\". Not accesed. Skipped.")
 
-	def download_covers(self):
-		# Количество загруженных обложек.
-		DownloadedCoversCount = 0
-		# Очистка консоли.
-		Cls()
-		# Вывод в консоль: заголовок парсинга.
-		print(self.__Message)
-		
-		# Для каждой обложки.
-		for Cover in self.__Novel["covers"]:
-			# Вывод в консоль: загрузка обложки.
-			print("Downloading cover: \"" + Cover["link"] + "\"... ", end = "")
-			# Директория загрузки.
-			Directory = self.__Settings["covers-directory"] + f"/{self.__UsedName}"
-			# Если директория не существует, создать.
-			if not os.path.exists(Directory): os.makedirs(Directory)
-			# Имя файла.
-			Filename = Cover["filename"]
-			# Состояние: существует ли уже обложка.
-			IsAlreadyExists = os.path.exists(f"{Directory}/{Filename}")
-			
-			# Если обложка не загружена или загружена, но включен режим перезаписи.
-			if not IsAlreadyExists or IsAlreadyExists and self.__ForceMode:
-				# Выполнение запроса.
-				Response = requests.get(Cover["link"])
-		
-				# Если запрос успешен.
-				if Response.status_code == 200:
+		# Преобразование типа состояния.
+		self.__IsAccesed = bool(self.__IsAccesed)
 
-					# Открытие потока записи.
-					with open(f"{Directory}/{Filename}", "wb") as FileWriter:
-						# Запись файла изображения.
-						FileWriter.write(Response.content)
-					
-					# Инкремент количества загруженных обложек.
-					DownloadedCoversCount += 1
-					# Вывод в консоль: загрузка завершена.
-					print("Done.")
+	def download_covers(self):
+
+		# Если тайтл доступен.
+		if self.__IsAccesed:
+			# Количество загруженных обложек.
+			DownloadedCoversCount = 0
+			# Очистка консоли.
+			Cls()
+			# Вывод в консоль: заголовок парсинга.
+			print(self.__Message)
+			
+			# Для каждой обложки.
+			for Cover in self.__Novel["covers"]:
+				# Вывод в консоль: загрузка обложки.
+				print("Downloading cover: \"" + Cover["link"] + "\"... ", end = "")
+				# Директория загрузки.
+				Directory = self.__Settings["covers-directory"] + f"/{self.__UsedName}"
+				# Если директория не существует, создать.
+				if not os.path.exists(Directory): os.makedirs(Directory)
+				# Имя файла.
+				Filename = Cover["filename"]
+				# Состояние: существует ли уже обложка.
+				IsAlreadyExists = os.path.exists(f"{Directory}/{Filename}")
 				
+				# Если обложка не загружена или загружена, но включен режим перезаписи.
+				if not IsAlreadyExists or IsAlreadyExists and self.__ForceMode:
+					# Выполнение запроса.
+					Response = requests.get(Cover["link"])
+			
+					# Если запрос успешен.
+					if Response.status_code == 200:
+
+						# Открытие потока записи.
+						with open(f"{Directory}/{Filename}", "wb") as FileWriter:
+							# Запись файла изображения.
+							FileWriter.write(Response.content)
+						
+						# Инкремент количества загруженных обложек.
+						DownloadedCoversCount += 1
+						# Вывод в консоль: загрузка завершена.
+						print("Done.")
+					
+					else:
+						# Вывод в консоль: ошибка загрузки.
+						print("Failure!")
+					
+					# Выжидание интервала.
+					sleep(self.__Settings["delay"])
+					
 				else:
-					# Вывод в консоль: ошибка загрузки.
-					print("Failure!")
-				
-				# Выжидание интервала.
-				sleep(self.__Settings["delay"])
-				
-			else:
-				# Вывод в консоль: обложка уже существует.
-				print("Already exists.")
-					
-		# Запись в лог сообщения: старт парсинга.
-		logging.info(f"Novel: \"{self.__Slug}\". Covers downloaded: {DownloadedCoversCount}.")
+					# Вывод в консоль: обложка уже существует.
+					print("Already exists.")
+						
+			# Запись в лог сообщения: старт парсинга.
+			logging.info(f"Novel: \"{self.__Slug}\". Covers downloaded: {DownloadedCoversCount}.")
 
 	def repair_chapter(self, chapter_id: int | str):
 
